@@ -1,23 +1,10 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#Fix the evalutation as described in https://github.com/isaac-sim/IsaacLabEvalTasks/issues/38
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
-from numpydantic import NDArray
-from pydantic import BaseModel, Field, field_serializer
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from .embodiment_tags import EmbodimentTag
 
@@ -171,16 +158,32 @@ class LeRobotModalityMetadata(BaseModel):
 
 
 class DatasetStatisticalValues(BaseModel):
-    max: NDArray = Field(..., description="Maximum values")
-    min: NDArray = Field(..., description="Minimum values")
-    mean: NDArray = Field(..., description="Mean values")
-    std: NDArray = Field(..., description="Standard deviation")
-    q01: NDArray = Field(..., description="1st percentile values")
-    q99: NDArray = Field(..., description="99th percentile values")
+    """Statistical values stored as numpy arrays, validated as lists for compatibility."""
+    
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,  # Allow numpy arrays
+    )
+    
+    max: Any = Field(..., description="Maximum values")  # type: ignore
+    min: Any = Field(..., description="Minimum values")  # type: ignore
+    mean: Any = Field(..., description="Mean values")  # type: ignore
+    std: Any = Field(..., description="Standard deviation")  # type: ignore
+    q01: Any = Field(..., description="1st percentile values")  # type: ignore
+    q99: Any = Field(..., description="99th percentile values")  # type: ignore
+
+    @field_validator('max', 'min', 'mean', 'std', 'q01', 'q99', mode='before')
+    @classmethod
+    def validate_to_ndarray(cls, v: Any) -> np.ndarray:
+        """Convert input to numpy array."""
+        if isinstance(v, np.ndarray):
+            return v
+        return np.array(v)
 
     @field_serializer("*", when_used="json")
-    def serialize_ndarray(self, v: NDArray) -> list[float]:
-        return v.tolist()  # type: ignore
+    def serialize_ndarray(self, v: Any) -> list[float]:
+        if isinstance(v, np.ndarray):
+            return v.tolist()
+        return list(v) if hasattr(v, '__iter__') else [v]  # type: ignore
 
 
 class DatasetStatistics(BaseModel):
